@@ -362,13 +362,11 @@ setup_child (int inp[2],
 	};
 
 	if (components != NULL && components[0] != '\0') {
-		snprintf(components_arg, sizeof(components_arg), "components=%s", components);
+		snprintf(components_arg, sizeof(components_arg), "--components=%s", components);
 		args[2] = components_arg;
 		args[3] = (char *)argument;
-		syslog (GKR_LOG_WARN, "gkr-pam: path (a)");
 	} else {
 		args[2] = (char *)argument;
-		syslog (GKR_LOG_WARN, "gkr-pam: path (b)");
 	}
 
 #ifdef WITH_SELINUX
