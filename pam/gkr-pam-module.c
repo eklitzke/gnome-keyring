@@ -67,6 +67,7 @@ enum {
 };
 
 #define ENV_CONTROL             "GNOME_KEYRING_CONTROL"
+#define ENV_COMPONENTS          "GNOME_KEYRING_COMPONENTS"
 
 /* read & write ends of a pipe */
 #define  READ_END   0
@@ -349,11 +350,19 @@ setup_child (int inp[2],
 {
 	const char* display;
 	const char *runtime;
+	char args[1024];
 	int i, ret;
+
+	g_strlcpy(args, "--daemonize", sizeof(args));
+	components = get_any_env (ph, ENV_COMPONENTS);
+	if (components != NULL) {
+		g_strlcat(args, " --components=", sizeof(args));
+		g_strlcat(args, components, sizeof(args));
+	}
 
 	char *args[] = {
 		GNOME_KEYRING_DAEMON,
-		"--daemonize",
+		args,
 		(char *)argument,
 		NULL
 	};
