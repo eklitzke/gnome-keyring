@@ -345,18 +345,29 @@ setup_child (int inp[2],
              int errp[2],
              pam_handle_t *ph,
              struct passwd *pwd,
-             const char *argument)
+             const char *argument,
+             const char *components)
 {
 	const char* display;
 	const char *runtime;
+	char components_arg[256];
 	int i, ret;
 
 	char *args[] = {
 		GNOME_KEYRING_DAEMON,
 		"--daemonize",
-		(char *)argument,
+		NULL,
+		NULL,
 		NULL
 	};
+
+	if (components != NULL && components[0] != '\0') {
+		snprintf(components_arg, sizeof(components_arg), "components=%s", components);
+		args[2] = components_arg;
+		args[3] = (char *)argument;
+	} else {
+		args[2] = (char *)argument;
+	}
 
 #ifdef WITH_SELINUX
 	setup_selinux_context(GNOME_KEYRING_DAEMON);
@@ -472,7 +483,8 @@ static int
 start_daemon (pam_handle_t *ph,
               struct passwd *pwd,
               bool is_user_login,
-              const char *password)
+              const char *password,
+              const char *components)
 {
 	struct sigaction defsact, oldsact, ignpipe, oldpipe;
 	int inp[2] = { -1, -1 };
@@ -522,7 +534,7 @@ start_daemon (pam_handle_t *ph,
 	/* This is the child */
 	case 0:
 		setup_child (inp, outp, errp, ph, pwd,
-		             is_user_login ? "--login" : NULL);
+		             is_user_login ? "--login" : NULL, components);
 		/* Should never be reached */
 		break;
 		
@@ -747,11 +759,12 @@ prompt_password (pam_handle_t *ph)
 }
 
 static uint 
-parse_args (pam_handle_t *ph, int argc, const char **argv)
+parse_args (pam_handle_t *ph, int argc, const char **argv, char *components)
 {
 	uint args = 0;
 	const void *svc;
-	int only_if_len;
+	size_t components_len;
+	size_t only_if_len;
 	int i;
 
 	svc = NULL;
@@ -759,6 +772,7 @@ parse_args (pam_handle_t *ph, int argc, const char **argv)
 		svc = NULL;
 
 	only_if_len = strlen ("only_if=");
+	components_len = strlen ("components=");
 
 	/* Parse the arguments */
 	for (i = 0; i < argc; i++) {
@@ -772,6 +786,10 @@ parse_args (pam_handle_t *ph, int argc, const char **argv)
 
 		} else if (strcmp (argv[i], "use_authtok") == 0) {
 			args |= ARG_USE_AUTHTOK;
+
+		} else if (strncmp (argv[i], "components=", components_len) == 0) {
+			if (components != NULL)
+				strcpy(components, argv[i] + components_len);
 
 		} else {
 			syslog (GKR_LOG_WARN, "gkr-pam: invalid option: %s",
@@ -800,11 +818,13 @@ pam_sm_authenticate (pam_handle_t *ph, int unused, int argc, const char **argv)
 {
 	struct passwd *pwd;
 	const char *user, *password;
+	char components[128];
 	int need_daemon = 0;
 	uint args;
 	int ret;
 	
-	args = parse_args (ph, argc, argv);
+	components[0] = '\0';
+	args = parse_args (ph, argc, argv, components);
 
 	if (args & ARG_IGNORE_SERVICE)
 		return PAM_SUCCESS;
@@ -838,7 +858,7 @@ pam_sm_authenticate (pam_handle_t *ph, int unused, int argc, const char **argv)
 	if (ret != PAM_SUCCESS && need_daemon) {
 		/* If we started the daemon, its already unlocked, since we passed the password */
 		if (args & ARG_AUTO_START)
-			ret = start_daemon (ph, pwd, true, password);
+			ret = start_daemon (ph, pwd, true, password, components);
 
 		/* Otherwise start later in open session, store password */
 		else
@@ -852,12 +872,14 @@ PAM_EXTERN int
 pam_sm_open_session (pam_handle_t *ph, int flags, int argc, const char **argv)
 {
 	const char *user = NULL, *password = NULL;
+	char components[128];
 	struct passwd *pwd;
 	int ret;
 	uint args;
 	int need_daemon = 0;
 
-	args = parse_args (ph, argc, argv);
+	components[0] = '\0';
+	args = parse_args (ph, argc, argv, components);
 
 	if (args & ARG_IGNORE_SERVICE)
 		return PAM_SUCCESS;
@@ -891,7 +913,7 @@ pam_sm_open_session (pam_handle_t *ph, int flags, int argc, const char **argv)
 	if (args & ARG_AUTO_START || password) {
 		ret = unlock_keyring (ph, pwd, password, &need_daemon);
 		if (ret != PAM_SUCCESS && need_daemon && (args & ARG_AUTO_START))
-			ret = start_daemon (ph, pwd, true, password);
+			ret = start_daemon (ph, pwd, true, password, components);
 	}
 
 	/* Destroy the stored authtok once it has been used */
@@ -985,7 +1007,7 @@ pam_chauthtok_update (pam_handle_t *ph, struct passwd *pwd, uint args)
 		 *
 		 * Note that we don't pass in an unlock password, that happens below.
 		 */
-		ret = start_daemon (ph, pwd, false, NULL);
+		ret = start_daemon (ph, pwd, false, NULL, NULL);
 		if (ret == PAM_SUCCESS) {
 			ret = change_keyring_password (ph, pwd, password, original, NULL);
 
@@ -1021,7 +1043,7 @@ pam_sm_chauthtok (pam_handle_t *ph, int flags, int argc, const char **argv)
 	uint args;
 	int ret;
 	
-	args = parse_args (ph, argc, argv);
+	args = parse_args (ph, argc, argv, NULL);
 
 	if (args & ARG_IGNORE_SERVICE)
 		return PAM_SUCCESS;
