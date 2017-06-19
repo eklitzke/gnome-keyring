@@ -349,20 +349,21 @@ setup_child (int inp[2],
              const char *argument)
 {
 	const char* display;
+	const char *components;
 	const char *runtime;
-	char args[1024];
+	char keyring_args[1024];
 	int i, ret;
 
-	g_strlcpy(args, "--daemonize", sizeof(args));
+	strncpy(keyring_args, "--daemonize", sizeof(keyring_args));
 	components = get_any_env (ph, ENV_COMPONENTS);
 	if (components != NULL) {
-		g_strlcat(args, " --components=", sizeof(args));
-		g_strlcat(args, components, sizeof(args));
+		strncat(keyring_args, " --components=", sizeof(keyring_args));
+		strncat(keyring_args, components, sizeof(keyring_args));
 	}
 
 	char *args[] = {
 		GNOME_KEYRING_DAEMON,
-		args,
+		keyring_args,
 		(char *)argument,
 		NULL
 	};
